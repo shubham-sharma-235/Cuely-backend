@@ -77,8 +77,28 @@ def register(request: Request, body: RegisterIn, db: Session = Depends(get_db)):
         raise HTTPException(400, "Email already registered")
 
     if existing and not existing.is_verified:
-        db.delete(existing)
-        db.commit()
+    otp_code = _generate_otp()
+
+    _invalidate_old_otps(existing.id, db)
+
+    db.add(OtpCode(
+        user_id=existing.id,
+        code=otp_code,
+        expires_at=datetime.utcnow() + timedelta(minutes=OTP_EXPIRY_MINUTES),
+    ))
+
+    db.commit()
+
+    send_otp_email(
+        existing.email,
+        existing.owner_name,
+        otp_code
+    )
+
+    return {
+        "status": "otp_required",
+        "email": existing.email
+    }
 
     user = User(
         email       = body.email,
